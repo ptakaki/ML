@@ -28,9 +28,9 @@ from warnings import simplefilter
 # ignore all future warnings
 simplefilter(action='ignore', category=FutureWarning)
 
-test = pd.read_csv('https://raw.githubusercontent.com/ptakaki/dataset/main/test_dataset_3s.csv')
+test = pd.read_csv('https://raw.githubusercontent.com/ptakaki/ML/main/test_dataset_3s.csv')
 
-train = pd.read_csv('https://raw.githubusercontent.com/ptakaki/dataset/main/training_dataset_3s.csv')
+train = pd.read_csv('https://raw.githubusercontent.com/ptakaki/ML/main/training_dataset_3s.csv')
 
 # One Hot Encoding
 
