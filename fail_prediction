@@ -1,0 +1,309 @@
+#**Preprocessing**
+
+# helpful packages
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import math
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+from sklearn.metrics import cohen_kappa_score
+
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import NearMiss
+
+# import warnings filter
+from warnings import simplefilter
+# ignore all future warnings
+simplefilter(action='ignore', category=FutureWarning)
+
+test = pd.read_csv('https://raw.githubusercontent.com/ptakaki/dataset/main/test_dataset_3s.csv')
+
+train = pd.read_csv('https://raw.githubusercontent.com/ptakaki/dataset/main/training_dataset_3s.csv')
+
+# One Hot Encoding
+
+# identifying categorical variables, removes and converts them to 0s and 1s,
+# solving the problem of multicollinearity between variables
+train = pd.get_dummies(train,drop_first=True) 
+
+# separating the dependent variable and the independent variables in the training dataset
+X_train = train.iloc[:,0:11]  # Independent Variables - without "polos"
+y_train = train.iloc[:,11] # Dependent Variable 
+
+test = pd.get_dummies(test,drop_first=True) # "Reprov" = 1
+test = test.rename(columns={"Apr_AC10": "Apr_AC1"})
+
+#separating the dependent variable and the independent variables in the testing dataset
+X_test = test.iloc[:,0:11] # without "Polos"
+y_test = test.iloc[:,11]
+
+# SUMMARY OF TRAINING AND TEST DATA 
+train_tot = len(train)
+train_reprov = sum(train.STATUS_Reprov) #or sum(y_train)
+train_aprov = train_tot - train_reprov
+perc_train_reprov = round(train_reprov/train_tot,3)
+print('SUMMARY OF TRAINING AND TEST DATA')
+print('## Trainning ##')
+print('Total of instances: ', train_tot)
+print('Total of failing:', train_reprov) 
+print('Total of passing:', train_aprov)
+print('Percentage of failures: ', perc_train_reprov*100,'%')
+print('')
+
+test_tot = len(test)
+test_reprov = sum(test.STATUS_Reprov) #or sum(y_test)
+test_aprov = test_tot - test_reprov
+perc_test_reprov = round(test_reprov/test_tot,3)
+print('## Test ##')
+print('Total of instances: ', test_tot)
+print('Total of failing:', test_reprov)
+print('Total of passing:', test_aprov)
+print('Percentage of failures: ', perc_test_reprov*100,'%')
+print('')
+
+print('GRAND TOTAL ', train_tot+test_tot)
+print('TRAINING: ', round(train_tot/(train_tot+test_tot),3)*100,'%')
+print('TEST: ', round(test_tot/(train_tot+test_tot),3)*100,'%')
+
+# Correlation Matrix
+plt.figure(figsize=(15,10))
+train_corr_matrix = train.corr()
+ax = sns.heatmap(
+    train_corr_matrix, 
+    vmin=-1, vmax=1, center=0,
+    cmap=sns.diverging_palette(20, 220, n=200),
+    square=True
+)
+ax.set_xticklabels(
+    ax.get_xticklabels(),
+    rotation=45,
+    horizontalalignment='right'
+);
+f1_score
+
+#**Models**
+
+##Function definitions and result data
+
+# dict with all metric results
+all_results = {}
+
+def calculate_results (method_name, cm_x): # POSITIVE = FAILING. //// NEGATIVE = PASSING
+    tp = cm_x[1,1] # fail classified as fail
+    tn = cm_x[0,0] # pass classified as pass
+    fp = cm_x[0,1] # pass classified as fail
+    fn = cm_x[1,0] # fail classified as pass
+    accu = (tp+tn)/(tp+tn+fp+fn)
+    prec = tp/(tp+fp) # accuracy: how many of those classified as failing actually fail
+    reca = tp/(tp+fn) # recall: how many of those who failed were classified as failed
+    espe = tn/(tn+fp) # specificity: how many of those approved were classified as approved
+    g_means = math.sqrt(espe*reca)
+    f_measu = (2*prec*reca)/(prec+reca)
+    pr_a = (tp+tn)/test_tot # relative agreement observed between raters
+    pr_e = (((tp+fn)/test_tot)*((tp+fp)/test_tot)) + (((fp+tn)/test_tot)*((fn+tn)/test_tot))
+    kappa = (pr_a-pr_e)/(1-pr_e)
+    # return a dict of dict
+    # accuracy_score, precision_score, recall_score, f1_score, cohen_kappa_score, r2_score, matthews_corrcoef
+    return {
+        method_name: {
+                        'tp': tp,
+                        'tn': tn,
+                        'fp': fp,
+                        'fn': fn,
+                        'accu': accu,
+                        'prec': prec,
+                        'reca': reca,
+                        'espe': espe,
+                        'g_means': g_means,
+                        'f_measu': f_measu,
+                        #'pr_a': pr_a,
+                        #'pr_e': pr_e,
+                        'kappa': kappa,
+                        }
+            }
+
+def display_results (cm_x, result_dict):
+    print('RESULTS CALCULATED FROM THE CONFUSION MATRIX: ')
+    plt.figure(figsize=(8, 6))
+    plt.title('Confusion matrix: ', size=16)
+    plt.tick_params(labelsize=20)
+    sns.set(font_scale=1.5)
+    sns.heatmap(cm_x, annot=True, cmap='Blues', fmt='g', annot_kws={"size":20});
+    print('True positive (fail classified as fail): ', result_dict['tp'])
+    print('True negative (pass classified as pass):   ', result_dict['tn'])
+    print('False positive (pass classified as fail):       ', result_dict['fp'])
+    print('False negative (fail classified as pass (!):    ', result_dict['fn'])
+    print('')
+    print('Accuracy:       ', result_dict['accu'])
+    print('Precision:             ', result_dict['prec'])
+    print('Recall (TVP):      ', result_dict['reca'])
+    print('Specificity (TFP): ', result_dict['espe'])
+    print('G-Means:              ', result_dict['g_means'])
+    print('F-measure:            ', result_dict['f_measu'])
+    print('Kappa Index:          ', result_dict['kappa'])
+    print('')
+
+    #print('RESULTADOS CALCULADOS A PARTIR DA BIBLIOTECA SKLEARN: ')
+    #from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, cohen_kappa_score, r2_score, matthews_corrcoef
+    #print('Acurácia:  ', accuracy_score (y_test, y_pred))
+    #print('Precisão:  ', precision_score(y_test, y_pred))
+    #print('Revocação: ', recall_score(y_test, y_pred))
+    #print('G-means: ', )
+    #print('F-measure: ', f1_score(y_test, y_pred))
+    #print('Kappa de Cohen: ', cohen_kappa_score(y_test, y_pred))
+    #print('Matthews correlation coefficient: ', matthews_corrcoef(y_test, y_pred))
+
+
+def run_classifier(classifier, X_train, y_train, X_test, y_test, result_name, all_results, display=True):
+    '''Process data and return results'''
+    # Training the model
+    classifier.fit(X_train, y_train)
+    # Testing the model
+    y_pred = classifier.predict(X_test)
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    result_dict = calculate_results (result_name, cm)
+    all_results = dict(all_results, **result_dict)
+    if display:
+        display_results(cm, result_dict[result_name])
+    print(f'{result_name} status: OK')
+    return all_results
+
+## Logistic Regression
+
+# Logistic Regression
+lr = LogisticRegression(random_state = 0)
+all_results = run_classifier(lr , X_train, y_train, X_test, y_test, 'Logistic Regression', all_results, True)
+# changing the last parameter to "False" omits partial results
+
+##SVM Models (4)
+
+###SVM with RBF Kernel
+
+# SVM with RBF Kernel
+svm = SVC(kernel = 'rbf', random_state = 0)
+all_results = run_classifier(svm , X_train, y_train, X_test, y_test,'SVM with RBF', all_results, True)
+
+### SVM with a 2nd-degree polynomial kernel
+
+# SVM with a 2nd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=2, random_state = 0)
+all_results = run_classifier(svm , X_train, y_train, X_test, y_test, 'SVM with a 2nd-degree polynomial kernel', all_results, False)
+
+###SVM with a 3rd-degree polynomial kernel
+
+# SVM with a 3rd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=3, random_state = 0)
+all_results = run_classifier(svm , X_train, y_train, X_test, y_test, 'SVM with a 3rd-degree polynomial kernel', all_results, False)
+
+###SVM with a 4nd-degree polynomial kernel
+
+# SVM with a 4nd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=4, random_state = 0)
+all_results = run_classifier(svm , X_train, y_train, X_test, y_test, 'SVM with a 4th-degree polynomial kernel', all_results, False)
+
+##Random Forest
+
+# Random Forest
+rf = RandomForestClassifier()
+all_results = run_classifier(rf , X_train, y_train, X_test, y_test, 'Random Forest', all_results, False)
+
+## Decision Tree
+
+# Decision Tree
+dt = DecisionTreeClassifier()
+all_results = run_classifier(dt , X_train, y_train, X_test, y_test, 'Decision Tree', all_results, False)
+
+# SMOTE (Synthetic Minority Over-sampling Technique)
+
+As verified in the initial analysis, the data is not balanced.
+
+# fitting SMOTE
+X_train_smote = train.iloc[:,0:11]
+y_train_smote = train.iloc[:,11]
+smt = SMOTE()
+X_train_smote, y_train_smote = smt.fit_sample(X_train_smote, y_train_smote)
+
+# Logistic Regression
+lr = LogisticRegression(random_state = 0)
+all_results = run_classifier(lr , X_train_smote, y_train_smote, X_test, y_test,'SMOTE: Logistic Regression', all_results, False)
+
+# SVM with RBF Kernel
+svm = SVC(kernel = 'rbf', random_state = 0)
+all_results = run_classifier(svm , X_train_smote, y_train_smote, X_test, y_test, 'SMOTE: SVM with RBF', all_results, False)
+
+# SVM with a 2nd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=2, random_state = 0)
+all_results = run_classifier(svm , X_train_smote, y_train_smote, X_test, y_test, 'SMOTE: SVM with a 2nd-degree polynomial kernel', all_results, False)
+
+# SVM with a 3rd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=3, random_state = 0)
+all_results = run_classifier(svm , X_train_smote, y_train_smote, X_test, y_test, 'SMOTE: SVM with a 3rd-degree polynomial kernel', all_results, False)
+
+# SVM with a 4nd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=4, random_state = 0)
+all_results = run_classifier(svm , X_train_smote, y_train_smote, X_test, y_test, 'SMOTE: SVM with a 4th-degree polynomial kernel', all_results, False)
+
+# Random Forest
+rf = RandomForestClassifier()
+all_results = run_classifier(rf , X_train_smote, y_train_smote, X_test, y_test, 'SMOTE: Random Forest', all_results, False)
+
+# Decision Tree
+dt = DecisionTreeClassifier()
+all_results = run_classifier(dt , X_train_smote, y_train_smote, X_test, y_test, 'SMOTE: Decision Tree', all_results, False)
+
+#NEAR MISS (Under-Sampling Technique)
+
+# fitting NearMiss
+X_train_near_miss = train.iloc[:,0:11]
+y_train_near_miss = train['STATUS_Reprov']
+
+nm = NearMiss()
+X_train_near_miss, y_train_near_miss = nm.fit_sample(X_train_near_miss, y_train_near_miss)
+
+# Logistic Regression
+lr = LogisticRegression(random_state = 0)
+all_results = run_classifier(lr , X_train_near_miss, y_train_near_miss, X_test, y_test, 'NearMiss: Logistic Regression', all_results, False)
+
+# SVM with RBF Kernel
+svm = SVC(kernel = 'rbf', random_state = 0)
+all_results = run_classifier(svm , X_train_near_miss, y_train_near_miss, X_test, y_test, 'NearMiss: SVM with RBF', all_results, False)
+
+# SVM with a 2nd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=2, random_state = 0)
+all_results = run_classifier(svm , X_train_near_miss, y_train_near_miss, X_test, y_test, 'NearMiss: SVM with a 2nd-degree polynomial kernel', all_results, False)
+
+# SVM with a 3rd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=3, random_state = 0)
+all_results = run_classifier(svm , X_train_near_miss, y_train_near_miss, X_test, y_test, 'NearMiss: SVM with a 3rd-degree polynomial kernel', all_results, False)
+
+# SVM with a 4nd-degree polynomial kernel
+svm = SVC(kernel = 'poly', degree=4, random_state = 0)
+all_results = run_classifier(svm , X_train_near_miss, y_train_near_miss, X_test, y_test, 'NearMiss: SVM with a 4th-degree polynomial kernel', all_results, False)
+
+# Random Forest
+rf = RandomForestClassifier()
+all_results = run_classifier(rf , X_train_near_miss, y_train_near_miss, X_test, y_test, 'NearMiss: Random Forest', all_results, False)
+
+# Decision Tree
+dt = DecisionTreeClassifier()
+all_results = run_classifier(dt , X_train_near_miss, y_train_near_miss, X_test, y_test, 'NearMiss: Decision Tree', all_results, False)
+
+# Results
+
+#@title
+df_results = pd.DataFrame.from_dict(all_results, orient='index')
+df_results.sort_values('reca',ascending=False)
+
